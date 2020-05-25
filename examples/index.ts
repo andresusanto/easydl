@@ -1,8 +1,8 @@
 /*
  *  You can import this module by using:
- *     import EasyDl from "easy-dl";
+ *     import EasyDl from "easydl";
  *                 or
- *    const EasyDl = require('easy-dl');
+ *    const EasyDl = require('easydl');
  */
 import EasyDl from "../dist";
 

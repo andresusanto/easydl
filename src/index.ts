@@ -4,25 +4,33 @@ import * as path from "path";
 import { EventEmitter } from "events";
 
 import { delay } from "./helpers";
-import { fileStats, validate } from "./fs";
+import { fileStats, validate, rename } from "./fs";
 import Request, { followRedirect, requestHeader } from "./request";
 
+/** The configurable download options. */
 interface Options {
+  /** Number of parallel connections */
   connections?: number;
+  /** What to do if the destination file exists:
+   * - `overwrite` will overwrite existing file (you will lost the current file)
+   * -`new_file` will append a `(COPY)` name to the downloaded file until the file does not exist
+   * -`ignore` will stop this current download
+   */
   existBehavior?: "overwrite" | "new_file" | "ignore";
+  /** Whether `EasyDl` should follow HTTP redirection. */
   followRedirect?: boolean;
+  /** Options passed to the http client */
   httpOptions?: http.RequestOptions;
+  /** The size of chunks of the file. It accepts a static value (number), or a function with this signature: `(size: number) => number` */
   chunkSize?: number | { (size: number): number };
+  /** Maximum number of retries when error occured */
   maxRetry?: number;
+  /** Delay before attempting to retry in ms  */
   retryDelay?: number;
+  /** Incremental back-off after each retry in ms */
   retryBackoff?: number;
+  /** Set how frequent `progress` event emitted by `EasyDL`  */
   reportInterval?: number;
-}
-
-interface ReadyData {
-  finalAddress: string;
-  paralel: boolean;
-  resumable: boolean;
 }
 
 interface RetryInfo {
@@ -48,13 +56,24 @@ interface SpeedStat {
 }
 
 interface Metadata {
+  /** Size of the file in bytes */
+  size: number;
+  /** Array containing the size of each chunks */
   chunks: number[];
+  /** Indicates if this instance is using previously downloaded chunks */
   isResume: boolean;
+  /** Current progress of each chunks in percent. Values should be 0 or 100 only. */
   progress: number[];
+  /** Final URL address of the file. It will be different from the supplied URL param if there is some redirection. */
   finalAddress: string;
-  paralel: boolean;
+  /** Indicates if this instance uses multiple-connection to perform downloads */
+  parallel: boolean;
+  /** Indicates if the server supports resuming. Some servers simply don't support/allow it. */
   resumable: boolean;
+  /** Raw HTTP response headers */
   headers: http.IncomingHttpHeaders | null;
+  /** The final file path. It may be different from the supplied dest param
+   * if you supplied directory as the dest param or you use "new_file" as the existBehavior.  */
   savedFilePath: string;
 }
 
@@ -66,9 +85,7 @@ interface EasyDl extends EventEmitter {
   addListener(event: "build", listener: (progress: Progress) => void): this;
   addListener(event: "metadata", listener: (data: Metadata) => void): this;
   addListener(event: "retry", listener: (data: RetryInfo) => void): this;
-  addListener(event: "ready", listener: (data: ReadyData) => void): this;
   addListener(event: "close", listener: () => void): this;
-  addListener(event: "data", listener: (chunk: any) => void): this;
   addListener(event: "end", listener: () => void): this;
   addListener(event: "error", listener: (err: Error) => void): this;
 
@@ -76,29 +93,30 @@ interface EasyDl extends EventEmitter {
   emit(event: "metadata", data: Metadata): boolean;
   emit(event: "progress", data: ProgressReport): boolean;
   emit(event: "retry", data: RetryInfo): boolean;
-  emit(event: "ready", data: ReadyData): boolean;
   emit(event: "close"): boolean;
-  emit(event: "data", chunk: Buffer): boolean;
   emit(event: "end"): boolean;
   emit(event: "error", err: Error): boolean;
 
+  /** Emitted when all chunks are downloaded and the file is being built by merging chunks together. */
   on(event: "build", listener: (progress: Progress) => void): this;
+  /** Emitted when the download metadata is ready to be used */
   on(event: "metadata", listener: (data: Metadata) => void): this;
+  /** The current download progress */
   on(event: "progress", listener: (data: ProgressReport) => void): this;
+  /** Emitted when the instance is closed and being destroyed */
   on(event: "close", listener: () => void): this;
-  on(event: "data", listener: (chunk: Buffer) => void): this;
+  /** The `end` event is emitted after the download had finished and the file being downloaded is ready. */
   on(event: "end", listener: () => void): this;
+  /** Emitted when an error occured */
   on(event: "error", listener: (err: Error) => void): this;
-  on(event: "ready", listener: (data: ReadyData) => void): this;
+  /** Emitted when EasyDL performed a retry */
   on(event: "retry", listener: (data: RetryInfo) => void): this;
 
   once(event: "build", listener: (progress: Progress) => void): this;
   once(event: "metadata", listener: (data: Metadata) => void): this;
   once(event: "progress", listener: (data: ProgressReport) => void): this;
   once(event: "retry", listener: (data: RetryInfo) => void): this;
-  once(event: "ready", listener: (data: ReadyData) => void): this;
   once(event: "close", listener: () => void): this;
-  once(event: "data", listener: (chunk: any) => void): this;
   once(event: "end", listener: () => void): this;
   once(event: "error", listener: (err: Error) => void): this;
 
@@ -110,10 +128,8 @@ interface EasyDl extends EventEmitter {
   ): this;
   prependListener(event: "retry", listener: (data: RetryInfo) => void): this;
   prependListener(event: "close", listener: () => void): this;
-  prependListener(event: "data", listener: (chunk: any) => void): this;
   prependListener(event: "end", listener: () => void): this;
   prependListener(event: "error", listener: (err: Error) => void): this;
-  prependListener(event: "ready", listener: (data: ReadyData) => void): this;
 
   prependOnceListener(
     event: "build",
@@ -132,13 +148,8 @@ interface EasyDl extends EventEmitter {
     listener: (data: RetryInfo) => void
   ): this;
   prependOnceListener(event: "close", listener: () => void): this;
-  prependOnceListener(event: "data", listener: (chunk: any) => void): this;
   prependOnceListener(event: "end", listener: () => void): this;
   prependOnceListener(event: "error", listener: (err: Error) => void): this;
-  prependOnceListener(
-    event: "ready",
-    listener: (data: ReadyData) => void
-  ): this;
 
   removeListener(event: "build", listener: (progress: Progress) => void): this;
   removeListener(event: "metadata", listener: (data: Metadata) => void): this;
@@ -148,12 +159,51 @@ interface EasyDl extends EventEmitter {
   ): this;
   removeListener(event: "retry", listener: (data: RetryInfo) => void): this;
   removeListener(event: "close", listener: () => void): this;
-  removeListener(event: "data", listener: (chunk: any) => void): this;
   removeListener(event: "end", listener: () => void): this;
   removeListener(event: "error", listener: (err: Error) => void): this;
-  removeListener(event: "ready", listener: (data: ReadyData) => void): this;
 }
 
+/**
+ * Easily download a file and save it to local disk. It supports resuming previously
+ * downloaded files, multi-connection downloads, and retry on fail out of the box!
+ *
+ * @class
+ * @remarks
+ *  **Quick start** :
+ *
+ * To use the `EasyDl` simply use the following:
+ * ```ts
+ * // event based
+ * const easydl = new EasyDl(url, dest)
+ *   .on('error', (err) => {
+ *     console.log('error!', err);
+ *     // handle error
+ *   })
+ *   .on('end', () => {
+ *     console.log('download success!');
+ *   })
+ *   .start();
+ *
+ * // async-await
+ * try {
+ *   const downloaded = await new EasyDl(url, dest).wait();
+ *   if (downloaded) console.log('file is downloaded!');
+ * } catch (e) {
+ *   console.log('error', e);
+ * }
+ *
+ * // promise
+ * new EasyDl(url, dest)
+ *   .then(success => {
+ *      if (success) console.log('file is downloaded!');
+ *   })
+ *   .catch(err => {
+ *      console.log('error', err);
+ *   })
+ * ```
+ *
+ * For advanced usages, such as handling progress information please see [DOCS](https://github.com/andresusanto/easydl)
+ */
 class EasyDl extends EventEmitter {
   private _started: boolean = false;
   private _destroyed: boolean = false;
@@ -167,7 +217,6 @@ class EasyDl extends EventEmitter {
   private _done: boolean = false;
 
   private _jobs: number[] = [];
-  private _size: number = 0;
   private _workers: number = 0;
   private _downloadedChunks: number = 0;
   private _totalChunks: number = 0;
@@ -175,23 +224,41 @@ class EasyDl extends EventEmitter {
   private _partsSpeedRef: SpeedStat[] = [];
   private _speedRef: SpeedStat = { time: Date.now(), bytes: 0 };
 
+  size: number = 0;
   isResume: boolean = false;
   savedFilePath: string | null;
   totalProgress: Progress = { speed: 0, bytes: 0, percentage: 0 };
   partsProgress: Progress[] = [];
   finalAddress: string;
-  paralel: boolean = true;
+  parallel: boolean = true;
   resumable: boolean = true;
   headers: http.IncomingHttpHeaders | null = null;
 
+  /**
+   * @param {string} url URL of the file to be downloaded
+   * @param {string} dest A local file/folder as the output of the download. If a folder is supplied (for example `~/`),
+   * it will add the file name automaticaly.
+   * @param {Options} options Configurable download options:
+   * - `connections` - Number of parallel connections
+   * - `existBehavior` - What to do if the destination file exists ([details](https://github.com/andresusanto/easydl))
+   * - `followRedirect` - Whether `EasyDl` should follow HTTP redirection.
+   * - `httpOptions` - Options passed to the http client
+   * - `chunkSize` - The size of chunks of the file. ([details](https://github.com/andresusanto/easydl))
+   * - `maxRetry` - Maximum number of retries when error occured
+   * - `retryDelay` - Delay before attempting to retry in ms
+   * - `retryBackoff` - Incremental back-off after each retry in ms
+   * - `reportInterval` - Set how frequent `progress` event emitted by `EasyDL`
+   */
   constructor(url: string, dest: string, options?: Options) {
     super();
     this._opts = Object.assign(
-      {
+      <Options>{
         existBehavior: "new_file",
         followRedirect: true,
-        connections: 3,
-        chunkSize: 1024 * 1024,
+        connections: 5,
+        chunkSize: (size) => {
+          return Math.min(size / 10, 10 * 1024 * 1024);
+        },
         maxRetry: 3,
         retryDelay: 2000,
         retryBackoff: 3000,
@@ -351,7 +418,7 @@ class EasyDl extends EventEmitter {
 
       this._reqs[id] = new Request(this.finalAddress, opts);
       let size = (range && range[1] - range[0] + 1) || 0;
-      const fileName = `${this.savedFilePath}.$$${id}`;
+      const fileName = `${this.savedFilePath}.$$${id}$PART`;
       let error: Error | null = null;
 
       await this._reqs[id]
@@ -387,8 +454,8 @@ class EasyDl extends EventEmitter {
 
           if (!size && headers["content-length"])
             size = parseInt(headers["content-length"]);
-          if (!this._size && id === 0 && headers["content-length"])
-            this._size = parseInt(headers["content-length"]);
+          if (!this.size && id === 0 && headers["content-length"])
+            this.size = parseInt(headers["content-length"]);
         })
         .on("data", (data) => {
           (this.partsProgress[id].bytes as number) += data.length;
@@ -397,8 +464,8 @@ class EasyDl extends EventEmitter {
             : 0;
 
           (this.totalProgress.bytes as number) += data.length;
-          this.totalProgress.percentage = this._size
-            ? (100 * <number>this.totalProgress.bytes) / this._size
+          this.totalProgress.percentage = this.size
+            ? (100 * <number>this.totalProgress.bytes) / this.size
             : 0;
           this._report(id);
         })
@@ -411,6 +478,10 @@ class EasyDl extends EventEmitter {
 
       if (this._destroyed) return;
       if (!error) {
+        await rename(
+          `${this.savedFilePath}.$$${id}$PART`,
+          `${this.savedFilePath}.$$${id}`
+        );
         this._onChunkCompleted(id);
         return;
       }
@@ -426,6 +497,7 @@ class EasyDl extends EventEmitter {
       );
     }
     this.emit("error", new Error(`Failed to download chunk #${id} ${range}`));
+    this.destroy();
   }
 
   private async _syncJobs() {
@@ -453,8 +525,8 @@ class EasyDl extends EventEmitter {
         this.partsProgress[i].percentage = 100;
         this.partsProgress[i].bytes = size;
         (this.totalProgress.bytes as number) += size;
-        this.totalProgress.percentage = this._size
-          ? (100 * <number>this.totalProgress.bytes) / this._size
+        this.totalProgress.percentage = this.size
+          ? (100 * <number>this.totalProgress.bytes) / this.size
           : 0;
         this.isResume = true;
       } else {
@@ -466,23 +538,23 @@ class EasyDl extends EventEmitter {
   private _calcRanges() {
     let chunkSize =
       typeof this._opts.chunkSize === "function"
-        ? Math.floor(this._opts.chunkSize(this._size))
+        ? Math.floor(this._opts.chunkSize(this.size))
         : <number>this._opts.chunkSize;
 
     let extraSize = 0;
-    if (this._size / chunkSize < <number>this._opts.connections) {
-      chunkSize = Math.floor(this._size / <number>this._opts.connections);
-      extraSize = this._size % <number>this._opts.connections;
+    if (this.size / chunkSize < <number>this._opts.connections) {
+      chunkSize = Math.floor(this.size / <number>this._opts.connections);
+      extraSize = this.size % <number>this._opts.connections;
     }
 
     const n = extraSize
-      ? Math.floor(this._size / chunkSize)
-      : Math.ceil(this._size / chunkSize);
+      ? Math.floor(this.size / chunkSize)
+      : Math.ceil(this.size / chunkSize);
 
     const chunks = Array(n);
     for (let i = 0; i < n; i += 1) {
       if (i < n - 1) chunks[i] = chunkSize;
-      else chunks[i] = this._size - (n - 1) * chunkSize - extraSize;
+      else chunks[i] = this.size - (n - 1) * chunkSize - extraSize;
 
       if (i < extraSize) chunks[i] += 1;
     }
@@ -506,60 +578,106 @@ class EasyDl extends EventEmitter {
     this._started = true;
     if (this._destroyed)
       throw new Error("Calling start() of a destroyed instance");
-    await this._ensureDest();
-    if (!this.savedFilePath) return;
-    if (!(await validate(this.savedFilePath)))
-      throw new Error(`Invalid output destination ${this._dest}`);
-    await this._getHeaders();
 
-    if (
-      this._opts.connections !== 1 &&
-      this.headers &&
-      this.headers["content-length"] &&
-      this.headers["accept-ranges"] === "bytes"
-    ) {
-      this._size = parseInt(this.headers["content-length"]);
-      this._calcRanges();
-      await this._syncJobs();
-      this._totalChunks = this._ranges.length;
-      if (!this._jobs.length) this._buildFile();
-      else this._processChunks();
-    } else {
-      this.resumable = false;
-      this.paralel = false;
-      this.partsProgress = [
-        {
-          speed: 0,
-          bytes: 0,
-          percentage: 0,
-        },
-      ];
-      this._totalChunks = 1;
-      this._download(0);
-    }
+    try {
+      await this._ensureDest();
+      if (!this.savedFilePath) return;
+      if (!(await validate(this.savedFilePath)))
+        throw new Error(`Invalid output destination ${this._dest}`);
+      await this._getHeaders();
 
-    if (this.listenerCount("metadata") > 0) {
-      this.emit("metadata", <Metadata>{
-        chunks: this._ranges.map(([a, b]) => b - a + 1),
-        isResume: this.isResume,
-        progress: this.partsProgress.map((progress) => progress.percentage),
-        finalAddress: this.finalAddress,
-        paralel: this.paralel,
-        resumable: this.resumable,
-        headers: this.headers,
-        savedFilePath: this.savedFilePath,
-      });
+      if (
+        this._opts.connections !== 1 &&
+        this.headers &&
+        this.headers["content-length"] &&
+        this.headers["accept-ranges"] === "bytes"
+      ) {
+        this.size = parseInt(this.headers["content-length"]);
+        this._calcRanges();
+        await this._syncJobs();
+        this._totalChunks = this._ranges.length;
+        if (!this._jobs.length) this._buildFile();
+        else this._processChunks();
+      } else {
+        if (this.headers && this.headers["content-length"])
+          this.size = parseInt(this.headers["content-length"]);
+        this.resumable = false;
+        this.parallel = false;
+        this.partsProgress = [
+          {
+            speed: 0,
+            bytes: 0,
+            percentage: 0,
+          },
+        ];
+        this._totalChunks = 1;
+        this._download(0);
+      }
+
+      if (this.listenerCount("metadata") > 0) {
+        this.emit("metadata", <Metadata>{
+          size: this.size,
+          chunks: this._ranges.map(([a, b]) => b - a + 1),
+          isResume: this.isResume,
+          progress: this.partsProgress.map((progress) => progress.percentage),
+          finalAddress: this.finalAddress,
+          parallel: this.parallel,
+          resumable: this.resumable,
+          headers: this.headers,
+          savedFilePath: this.savedFilePath,
+        });
+      }
+    } catch (err) {
+      this.emit("error", err);
+      this.destroy();
     }
   }
 
+  /**
+   * Start the downloads and wait for its metadata.
+   *
+   * @async
+   * @returns {Metadata} Metadata object for the current download
+   * @remarks
+   * Using async await
+   * ```ts
+   * const metadata = await new EasyDl('url', './').metadata();
+   * ```
+   *
+   * Using promise
+   * ```ts
+   * new EasyDl('url', './')
+   *    .metadata()
+   *    .then(meta => {
+   *        // do something
+   *    })
+   * ```
+   */
   async metadata(): Promise<Metadata> {
     process.nextTick(this._start);
-    return await new Promise<Metadata>((res) => this.once("metadata", res));
+    if (this._destroyed)
+      throw new Error("Calling metadata() on destroyed instance.");
+    return await new Promise<Metadata>((res, rej) => {
+      this.once("error", rej);
+      this.once("metadata", res);
+    });
   }
 
+  /**
+   * Wait until the download has finished, failed, or cancelled.
+   *
+   * @async
+   * @returns {boolean} `true` indicates that the download is success, `false` is
+   * returned if the download is cancelled by user.
+   * @throws {Error} when download failed.
+   */
   async wait(): Promise<boolean> {
     process.nextTick(this._start);
-    await new Promise((res) => this.once("close", res));
+    if (this._destroyed) return this._done;
+    await new Promise((res, rej) => {
+      this.once("error", rej);
+      this.once("close", res);
+    });
     return this._done;
   }
 
@@ -569,6 +687,7 @@ class EasyDl extends EventEmitter {
   }
 
   destroy(): void {
+    if (this._destroyed) return;
     this._destroyed = true;
     for (let req of this._reqs) {
       if (!req) continue;
