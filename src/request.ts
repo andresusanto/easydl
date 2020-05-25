@@ -167,8 +167,13 @@ export async function followRedirect(
   address: string,
   opts?: http.RequestOptions
 ): Promise<{ address: string; headers?: http.IncomingHttpHeaders }> {
+  const visited = new Set<string>();
   let currentAddress = address;
   while (true) {
+    if (visited.has(currentAddress))
+      throw new Error(`Infinite redirect is detected at ${currentAddress}`);
+    visited.add(currentAddress);
+
     const { headers, statusCode } = await requestHeader(currentAddress, opts);
     if (statusCode === 200 || statusCode === 206) {
       return {
