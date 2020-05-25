@@ -1,7 +1,7 @@
 {
   "name": "easydl",
   "version": "1.0.0",
-  "description": "The best download manager for NodeJS",
+  "description": "Easily download a file and save it to local disk. It supports resuming previously downloaded files, multi-connection/parallel downloads, and retry on fail out of the box!",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -10,6 +10,27 @@
   },
   "author": "Andre Susanto <andre@susan.to>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andresusanto/easydl"
+  },
+  "bugs": {
+    "url": "https://github.com/andresusanto/easydl/issues"
+  },
+  "homepage": "https://github.com/andresusanto/easydl",
+  "keywords": [
+    "download",
+    "downloader",
+    "progress",
+    "resume",
+    "retry",
+    "parallel",
+    "multithread",
+    "request",
+    "node",
+    "electron",
+    "chunk"
+  ],
   "devDependencies": {
     "@types/node": "^14.0.4",
     "ts-node": "^8.10.1",
