@@ -200,7 +200,7 @@ export async function requestHeader(
 ): Promise<RequestReadyData> {
   const req = new Request(
     address,
-    Object.assign({}, options, { method: "HEAD" })
+    Object.assign({}, options, { method: "GET" })
   ).end();
 
   const res = await Promise.race([
