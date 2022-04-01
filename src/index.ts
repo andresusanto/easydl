@@ -426,6 +426,11 @@ class EasyDl extends EventEmitter {
       let size = (range && range[1] - range[0] + 1) || 0;
       const fileName = `${this.savedFilePath}.$$${id}$PART`;
       let error: Error | null = null;
+      const dest = fs.createWriteStream(fileName);
+      dest.on("error", (err) => {
+        if (this._destroyed) return;
+        this.emit("error", err);
+      });
 
       await this._reqs[id]
         .once("ready", ({ statusCode, headers }) => {
@@ -479,7 +484,7 @@ class EasyDl extends EventEmitter {
           if (this._destroyed) return;
           this.emit("error", err);
         })
-        .pipe(fs.createWriteStream(fileName))
+        .pipe(dest)
         .wait();
 
       if (this._destroyed) return;
