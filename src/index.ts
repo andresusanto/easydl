@@ -317,29 +317,35 @@ class EasyDl extends EventEmitter {
 
   private async _buildFile() {
     if (this._destroyed) return;
-    this.emit("build", { percentage: 0 });
-    const dest = fs.createWriteStream(<string>this.savedFilePath);
-    for (let i = 0; i < this._totalChunks; i += 1) {
-      const fileName = `${this.savedFilePath}.$$${i}`;
-      const source = fs.createReadStream(fileName);
-      await new Promise((res, rej) => {
-        source.pipe(dest, { end: false });
-        source.on("error", rej);
-        source.on("end", res);
-      });
-      source.close();
-      this.emit("build", {
-        percentage: 100 * (i / this._totalChunks),
-      });
+    try {
+      this.emit("build", {percentage: 0});
+      const dest = fs.createWriteStream(<string>this.savedFilePath);
+      for (let i = 0; i < this._totalChunks; i += 1) {
+        const fileName = `${this.savedFilePath}.$$${i}`;
+        const source = fs.createReadStream(fileName);
+        await new Promise((res, rej) => {
+          source.pipe(dest, {end: false});
+          source.on("error", rej);
+          dest.on("error", rej);
+          source.on("end", res);
+        });
+        source.close();
+        this.emit("build", {
+          percentage: 100 * (i / this._totalChunks),
+        });
+      }
+      for (let i = 0; i < this._totalChunks; i += 1) {
+        const fileName = `${this.savedFilePath}.$$${i}`;
+        await new Promise((res) => fs.unlink(fileName, res));
+      }
+      dest.close();
+      this._done = true;
+      this.emit("end");
+      this.destroy();
+    } catch (err) {
+      this.emit("error", err);
+      this.destroy();
     }
-    for (let i = 0; i < this._totalChunks; i += 1) {
-      const fileName = `${this.savedFilePath}.$$${i}`;
-      await new Promise((res) => fs.unlink(fileName, res));
-    }
-    dest.close();
-    this._done = true;
-    this.emit("end");
-    this.destroy();
   }
 
   private _onChunkCompleted(id: number) {
@@ -420,6 +426,11 @@ class EasyDl extends EventEmitter {
       let size = (range && range[1] - range[0] + 1) || 0;
       const fileName = `${this.savedFilePath}.$$${id}$PART`;
       let error: Error | null = null;
+      const dest = fs.createWriteStream(fileName);
+      dest.on("error", (err) => {
+        if (this._destroyed) return;
+        this.emit("error", err);
+      });
 
       await this._reqs[id]
         .once("ready", ({ statusCode, headers }) => {
@@ -473,7 +484,7 @@ class EasyDl extends EventEmitter {
           if (this._destroyed) return;
           this.emit("error", err);
         })
-        .pipe(fs.createWriteStream(fileName))
+        .pipe(dest)
         .wait();
 
       if (this._destroyed) return;
