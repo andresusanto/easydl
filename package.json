@@ -1,6 +1,6 @@
 {
   "name": "easydl",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Easily download a file and save it to local disk. It supports resuming previously downloaded files, multi-connection/parallel downloads, and retry on fail out of the box!",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
