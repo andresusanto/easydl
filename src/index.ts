@@ -31,6 +31,8 @@ interface Options {
   retryBackoff?: number;
   /** Set how frequent `progress` event emitted by `EasyDL`  */
   reportInterval?: number;
+  /** Use GET method instead of HEAD for requesting headers */
+  methodFallback?: boolean;
 }
 
 interface RetryInfo {
@@ -263,6 +265,7 @@ class EasyDl extends EventEmitter {
         retryDelay: 2000,
         retryBackoff: 3000,
         reportInterval: 2500,
+        methodFallback: false,
       },
       options
     );
@@ -300,14 +303,16 @@ class EasyDl extends EventEmitter {
     if (this._opts.followRedirect) {
       const redirResult = await followRedirect(
         this._url,
-        this._opts.httpOptions
+        this._opts.httpOptions,
+        this._opts.methodFallback
       );
       this.finalAddress = redirResult.address;
       this.headers = redirResult.headers || null;
     } else {
       const headerResult = await requestHeader(
         this._url,
-        this._opts.httpOptions
+        this._opts.httpOptions,
+        this._opts.methodFallback   
       );
       if (headerResult.statusCode !== 200 && headerResult.statusCode !== 206)
         throw new Error(`Got HTTP response ${headerResult.statusCode}`);
