@@ -411,6 +411,14 @@ class EasyDl extends EventEmitter {
     }
   }
 
+  private _getSizeFromIncomingHttpHeaders(headers: http.IncomingHttpHeaders) {
+    if (!(headers["content-length"] || headers["content-range"])) return 0;
+    if (this._opts.methodFallback && headers["content-range"])
+      return parseInt(headers["content-range"].split("/").at(1) ?? "0");
+    if (headers["content-length"]) return parseInt(headers["content-length"]);
+    return 0;
+  }
+
   private async _download(id: number, range?: [number, number]) {
     for (let attempt of this._attempts) {
       let opts = this._opts.httpOptions;
@@ -469,9 +477,9 @@ class EasyDl extends EventEmitter {
           }
 
           if (!size && headers["content-length"])
-            size = parseInt(headers["content-length"]);
+            size = this._getSizeFromIncomingHttpHeaders(headers);
           if (!this.size && id === 0 && headers["content-length"])
-            this.size = parseInt(headers["content-length"]);
+            this.size = this._getSizeFromIncomingHttpHeaders(headers);
         })
         .on("data", (data) => {
           (this.partsProgress[id].bytes as number) += data.length;
@@ -608,7 +616,7 @@ class EasyDl extends EventEmitter {
         this.headers["content-length"] &&
         this.headers["accept-ranges"] === "bytes"
       ) {
-        this.size = parseInt(this.headers["content-length"]);
+        this.size = this._getSizeFromIncomingHttpHeaders(this.headers);
         this._calcRanges();
         await this._syncJobs();
         this._totalChunks = this._ranges.length;
@@ -616,7 +624,7 @@ class EasyDl extends EventEmitter {
         else this._processChunks();
       } else {
         if (this.headers && this.headers["content-length"])
-          this.size = parseInt(this.headers["content-length"]);
+          this.size = this._getSizeFromIncomingHttpHeaders(this.headers);
         this.resumable = false;
         this.parallel = false;
         this.partsProgress = [
