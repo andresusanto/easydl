@@ -1,6 +1,6 @@
 # EasyDl
 
-![Install via NPM](https://nodei.co/npm/easydl.png)
+[![Install via NPM](https://nodei.co/npm/easydl.png)](https://www.npmjs.com/package/easydl)
 
 Easily download a file and save it to a local disk. It supports resuming previously downloaded files, multi-connection/parallel downloads, and retry on failure out of the box!
 
@@ -272,6 +272,7 @@ new EasyDl(url, dest, options);
 - `existBehavior` - What to do if the destination file already exists. Possible values:
   - `new_file` **(default)** - create a new file by appending `(COPY)` to the file name.
   - `overwrite` - overwrite the file. Proceed with caution.
+  - `error` - throws error.
   - `ignore` - ignore and skip this download
 - `followRedirect` - (Boolean) Whether `EasyDl` should follow HTTP redirection. Defaults to `true`
 - `httpOptions` - Options passed to the http client. You can modify the HTTP methods, Auth, Headers, Proxy, etc here. See [Node.js docs](https://nodejs.org/api/http.html#http_http_request_url_options_callback) for more information.
