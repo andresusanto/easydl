@@ -198,17 +198,31 @@ export async function requestHeader(
   address: string,
   options?: http.RequestOptions
 ): Promise<RequestReadyData> {
-  const req = new Request(
+  let req = new Request(
     address,
     Object.assign({}, options, { method: "HEAD" })
   ).end();
 
-  const res = await Promise.race([
+  let res = await Promise.race([
     new Promise<RequestReadyData>((res) => req.once("ready", res)),
     new Promise<Error>((res) => req.once("error", res)),
   ]);
 
-  const code = (<RequestReadyData>res).statusCode;
+  let code = (<RequestReadyData>res).statusCode;
+  if (code === 403) {
+    req = new Request(
+      address,
+      Object.assign({}, options, { method: "GET" })
+    ).end();
+
+    res = await Promise.race([
+      new Promise<RequestReadyData>((res) => req.once("ready", res)),
+      new Promise<Error>((res) => req.once("error", res)),
+    ]);
+
+    code = (<RequestReadyData>res).statusCode;
+  }
+
   if (code) {
     return <RequestReadyData>res;
   }
