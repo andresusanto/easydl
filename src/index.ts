@@ -488,6 +488,7 @@ class EasyDl extends EventEmitter {
           this._report(id);
         })
         .on("error", (err) => {
+          dest.destroy();
           if (this._destroyed) return;
           this.emit("error", err);
         })
