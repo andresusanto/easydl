@@ -31,6 +31,8 @@ interface Options {
   retryBackoff?: number;
   /** Set how frequent `progress` event emitted by `EasyDL`  */
   reportInterval?: number;
+  /** Use GET method instead of HEAD for requesting headers */
+  methodFallback?: boolean;
 }
 
 interface RetryInfo {
@@ -263,6 +265,7 @@ class EasyDl extends EventEmitter {
         retryDelay: 2000,
         retryBackoff: 3000,
         reportInterval: 2500,
+        methodFallback: false,
       },
       options
     );
@@ -302,14 +305,16 @@ class EasyDl extends EventEmitter {
     if (this._opts.followRedirect) {
       const redirResult = await followRedirect(
         this._url,
-        this._opts.httpOptions
+        this._opts.httpOptions,
+        this._opts.methodFallback
       );
       this.finalAddress = redirResult.address;
       this.headers = redirResult.headers || null;
     } else {
       const headerResult = await requestHeader(
         this._url,
-        this._opts.httpOptions
+        this._opts.httpOptions,
+        this._opts.methodFallback   
       );
       if (headerResult.statusCode !== 200 && headerResult.statusCode !== 206)
         throw new Error(`Got HTTP response ${headerResult.statusCode}`);
@@ -413,6 +418,14 @@ class EasyDl extends EventEmitter {
     }
   }
 
+  private _getSizeFromIncomingHttpHeaders(headers: http.IncomingHttpHeaders) {
+    if (!(headers["content-length"] || headers["content-range"])) return 0;
+    if (this._opts.methodFallback && headers["content-range"])
+      return parseInt(headers["content-range"].split("/").at(1) ?? "0");
+    if (headers["content-length"]) return parseInt(headers["content-length"]);
+    return 0;
+  }
+
   private async _download(id: number, range?: [number, number]) {
     for (let attempt of this._attempts) {
       let opts = this._opts.httpOptions;
@@ -471,9 +484,9 @@ class EasyDl extends EventEmitter {
           }
 
           if (!size && headers["content-length"])
-            size = parseInt(headers["content-length"]);
+            size = this._getSizeFromIncomingHttpHeaders(headers);
           if (!this.size && id === 0 && headers["content-length"])
-            this.size = parseInt(headers["content-length"]);
+            this.size = this._getSizeFromIncomingHttpHeaders(headers);
         })
         .on("data", (data) => {
           (this.partsProgress[id].bytes as number) += data.length;
@@ -612,7 +625,7 @@ class EasyDl extends EventEmitter {
         this.headers["content-length"] &&
         this.headers["accept-ranges"] === "bytes"
       ) {
-        this.size = parseInt(this.headers["content-length"]);
+        this.size = this._getSizeFromIncomingHttpHeaders(this.headers);
         this._calcRanges();
         await this._syncJobs();
         this._totalChunks = this._ranges.length;
@@ -620,7 +633,7 @@ class EasyDl extends EventEmitter {
         else this._processChunks();
       } else {
         if (this.headers && this.headers["content-length"])
-          this.size = parseInt(this.headers["content-length"]);
+          this.size = this._getSizeFromIncomingHttpHeaders(this.headers);
         this.resumable = false;
         this.parallel = false;
         this.partsProgress = [
