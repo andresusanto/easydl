@@ -314,7 +314,7 @@ class EasyDl extends EventEmitter {
       const headerResult = await requestHeader(
         this._url,
         this._opts.httpOptions,
-        this._opts.methodFallback   
+        this._opts.methodFallback
       );
       if (headerResult.statusCode !== 200 && headerResult.statusCode !== 206)
         throw new Error(`Got HTTP response ${headerResult.statusCode}`);
@@ -342,7 +342,7 @@ class EasyDl extends EventEmitter {
 
         source.destroy();
         this.emit("build", {
-          percentage: 100 * (i / this._totalChunks),
+          percentage: 100 * ((i + 1) / this._totalChunks),
         });
       }
       for (let i = 0; i < this._totalChunks; i += 1) {
@@ -614,7 +614,11 @@ class EasyDl extends EventEmitter {
 
     try {
       await this._ensureDest();
-      if (!this.savedFilePath) return;
+      if (!this.savedFilePath) {
+        this._done = true;
+        this.emit("close");
+        return;
+      }
       if (!(await validate(this.savedFilePath)))
         throw new Error(`Invalid output destination ${this._dest}`);
       await this._getHeaders();
