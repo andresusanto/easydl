@@ -292,6 +292,7 @@ new EasyDl(url, dest, options);
 - `retryDelay` - Delay in ms before attempting a retry. Defaults to `2000`.
 - `retryBackoff` - Incremental back-off in ms for each failed retries. Defaults to `3000`.
 - `reportInterval` - Set how frequent `progress` event emitted by `EasyDL`. Defaults to `2500`.
+- `methodFallback` - use `GET` method instead of `HEAD` to calculate metadata. Useful for downloading S3 signed URLs.
 
 ### Metadata
 

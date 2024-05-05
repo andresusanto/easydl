@@ -129,7 +129,7 @@ class Request extends EventEmitter {
   }
 
   async wait(): Promise<boolean> {
-    await new Promise((res) => this.once("close", res));
+    await new Promise<void>((res) => this.once("close", res));
     return this._end;
   }
 
@@ -175,7 +175,11 @@ export async function followRedirect(
       throw new Error(`Infinite redirect is detected at ${currentAddress}`);
     visited.add(currentAddress);
 
-    const { headers, statusCode } = await requestHeader(currentAddress, opts, methodFallback);
+    const { headers, statusCode } = await requestHeader(
+      currentAddress,
+      opts,
+      methodFallback
+    );
     if (statusCode === 200 || statusCode === 206) {
       return {
         address: currentAddress,
@@ -200,17 +204,14 @@ export async function requestHeader(
   options?: http.RequestOptions,
   methodFallback?: boolean
 ): Promise<RequestReadyData> {
-  const req = new Request(
-    address,
-    {
-      ...options,
-      headers: {
-        ...(options?.headers),
-        ...(methodFallback && { Range: "bytes=0-0" })
-      },
-      method: methodFallback ? "GET" : "HEAD"
-    }
-  ).end();
+  const req = new Request(address, {
+    ...options,
+    headers: {
+      ...options?.headers,
+      ...(methodFallback && { Range: "bytes=0-0" }),
+    },
+    method: methodFallback ? "GET" : "HEAD",
+  }).end();
 
   const res = await Promise.race([
     new Promise<RequestReadyData>((res) => req.once("ready", res)),
