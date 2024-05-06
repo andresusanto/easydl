@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { hash } from "./hash";
-import os from "os";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -21,8 +20,11 @@ export const files = {
 };
 
 export function createTmpFile() {
-  const dir = fs.mkdtempSync(os.tmpdir());
+  const dir = path.join(".tmp", crypto.randomUUID());
   const fileName = crypto.randomUUID();
+
+  if (!fs.existsSync(".tmp")) fs.mkdirSync(".tmp");
+  fs.mkdirSync(dir);
 
   return {
     dir,
