@@ -19,6 +19,9 @@
     "url": "https://github.com/andresusanto/easydl/issues"
   },
   "homepage": "https://github.com/andresusanto/easydl",
+  "files": [
+    "dist/*"
+  ],
   "keywords": [
     "download",
     "downloader",
