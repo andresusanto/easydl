@@ -280,13 +280,45 @@ class EasyDl extends EventEmitter {
     this.finalAddress = url;
   }
 
+  private _getFilenameFromContentDisposition(header: string | undefined): string | null {
+    if (!header) return null;
+
+    // Try filename* parameter first (handles UTF-8 encoding)
+    const filenameStarMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
+    if (filenameStarMatch) {
+      try {
+        return decodeURIComponent(filenameStarMatch[1]);
+      } catch {
+        // If decoding fails, continue to try other methods
+      }
+    }
+
+    // Try filename parameter
+    const filenameMatch = header.match(/filename="([^"]+)"|filename=([^;]+)/i);
+    if (filenameMatch) {
+      return filenameMatch[1] || filenameMatch[2];
+    }
+
+    return null;
+  }
+
   private async _ensureDest() {
     while (this.savedFilePath) {
       const stats = await fileStats(this.savedFilePath);
       if (stats && stats.isDirectory()) {
+        // If headers are available and contain Content-Disposition, try to get filename from it
+        let filename = this.headers ?
+          this._getFilenameFromContentDisposition(this.headers["content-disposition"] as string) :
+          null;
+
+        // Fall back to URL basename if no filename found in Content-Disposition
+        if (!filename) {
+          filename = path.posix.basename(this._url);
+        }
+
         this.savedFilePath = path.join(
           this.savedFilePath,
-          path.posix.basename(this._url)
+          filename
         );
       } else if (stats && this._opts.existBehavior === "new_file") {
         const loc = path.parse(this.savedFilePath);
@@ -613,6 +645,9 @@ class EasyDl extends EventEmitter {
       throw new Error("Calling start() of a destroyed instance");
 
     try {
+      // Get headers first so we can use them for filename determination
+      await this._getHeaders();
+
       await this._ensureDest();
       if (!this.savedFilePath) {
         this._done = true;
@@ -621,7 +656,6 @@ class EasyDl extends EventEmitter {
       }
       if (!(await validate(this.savedFilePath)))
         throw new Error(`Invalid output destination ${this._dest}`);
-      await this._getHeaders();
 
       if (
         this._opts.connections !== 1 &&
